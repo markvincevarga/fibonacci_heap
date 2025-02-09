@@ -247,12 +247,16 @@ impl FibonacciHeap {
 
     /// Performs a cascading cut operation on a node's ancestors.
     fn cascading_cut(&mut self, node: Rc<RefCell<Node>>) {
-        if let Some(parent) = node.borrow().parent.clone() {
+        // Clone parent reference without holding borrow
+        let parent = node.borrow().parent.as_ref().map(|p| p.clone());
+
+        if let Some(parent_ref) = parent {
             if !node.borrow().marked {
                 node.borrow_mut().marked = true;
             } else {
-                self.cut(node.clone(), parent.clone());
-                self.cascading_cut(parent);
+                // Now safe to mutate parent_ref
+                self.cut(node.clone(), parent_ref.clone());
+                self.cascading_cut(parent_ref);
             }
         }
     }
@@ -336,5 +340,105 @@ mod tests {
         assert_eq!(heap.extract_min(), Some(10));
         assert_eq!(heap.extract_min(), Some(20));
         assert_eq!(heap.extract_min(), None);
+    }
+
+    #[test]
+    fn test_link() {
+        let mut heap = FibonacciHeap::new();
+        let parent = Node::new(10);
+        let child = Node::new(5);
+
+        // Test: Link child to parent and verify structural changes
+        heap.link(child.clone(), parent.clone());
+
+        // Verify parent's degree is incremented
+        assert_eq!(parent.borrow().degree, 1);
+        // Verify child is added to parent's children list
+        assert_eq!(parent.borrow().children.len(), 1);
+        assert!(Rc::ptr_eq(&parent.borrow().children[0], &child));
+
+        // Verify child's parent reference is updated
+        assert!(child.borrow().parent.as_ref().is_some());
+        assert!(Rc::ptr_eq(
+            child.borrow().parent.as_ref().unwrap(),
+            &parent
+        ));
+
+        // Verify child's marked flag is reset after linking
+        assert!(!child.borrow().marked);
+    }
+
+    #[test]
+    fn test_cut() {
+        let mut heap = FibonacciHeap::new();
+        let parent = Node::new(10);
+        let child = Node::new(5);
+
+        // Setup: Simulate existing parent-child relationship
+        parent.borrow_mut().children.push(child.clone());
+        parent.borrow_mut().degree = 1;
+        child.borrow_mut().parent = Some(parent.clone());
+        child.borrow_mut().marked = true;
+
+        // Test: Perform cut operation between child and parent
+        heap.cut(child.clone(), parent.clone());
+
+        // Verify parent's degree is decremented
+        assert_eq!(parent.borrow().degree, 0);
+        // Verify child is removed from parent's children
+        assert!(parent.borrow().children.is_empty());
+
+        // Verify child's parent reference is cleared
+        assert!(child.borrow().parent.is_none());
+        // Verify child's marked flag is reset
+        assert!(!child.borrow().marked);
+        // Verify child is moved to root list
+        assert!(heap.root_list.contains(&child));
+    }
+
+    #[test]
+    fn test_cascading_cut() {
+        let mut heap = FibonacciHeap::new();
+
+        // Create 3-level hierarchy: root -> grandparent -> parent -> child
+        let root = Node::new(30);
+        let grandparent = Node::new(20);
+        let parent = Node::new(15);
+        let child = Node::new(5);
+
+        // Add root to heap's root list
+        heap.root_list.push(root.clone());
+
+        // Build hierarchy
+        root.borrow_mut().children.push(grandparent.clone());
+        root.borrow_mut().degree = 1;
+        grandparent.borrow_mut().parent = Some(root.clone());
+
+        grandparent.borrow_mut().children.push(parent.clone());
+        grandparent.borrow_mut().degree = 1;
+        parent.borrow_mut().parent = Some(grandparent.clone());
+
+        parent.borrow_mut().children.push(child.clone());
+        parent.borrow_mut().degree = 1;
+        child.borrow_mut().parent = Some(parent.clone());
+
+        // Mark parent to trigger cascading cut
+        parent.borrow_mut().marked = true;
+
+        // Perform operations
+        heap.cut(child.clone(), parent.clone());
+        heap.cascading_cut(parent.clone());
+
+        // Verify results
+        assert!(heap.root_list.contains(&parent));
+        assert!(parent.borrow().parent.is_none());
+
+        // Grandparent should lose child and get marked
+        assert_eq!(grandparent.borrow().degree, 0);
+        assert!(grandparent.borrow().children.is_empty());
+        assert!(grandparent.borrow().marked);  // Now passes
+
+        // Root remains unchanged
+        assert_eq!(root.borrow().degree, 1);
     }
 }
