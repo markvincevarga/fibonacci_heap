@@ -146,33 +146,44 @@ impl FibonacciHeap {
 
     /// Consolidates the heap by linking nodes of the same degree.
     fn consolidate(&mut self) {
-        let mut degrees: HashMap<usize, Rc<RefCell<Node>>> = HashMap::new();
-        let mut new_root_list: Vec<Rc<RefCell<Node>>> = Vec::new();
-
+        let mut degrees: Vec<Option<Rc<RefCell<Node>>>> = Vec::new();
         let original_root_list = std::mem::take(&mut self.root_list);
 
         for node in original_root_list {
             let mut current = node;
             let mut degree = current.borrow().degree;
 
-            while let Some(mut degree_node) = degrees.remove(&degree) {
-                if degree_node.borrow().key < current.borrow().key {
-                    std::mem::swap(&mut current, &mut degree_node);
+            loop {
+                // Ensure the degrees vector is large enough to accommodate the current degree
+                while degree >= degrees.len() {
+                    degrees.push(None);
                 }
-                self.link(degree_node.clone(), current.clone());
-                degree = current.borrow().degree;
-            }
 
-            degrees.insert(degree, current.clone());
-            new_root_list.push(current);
+                // Check if there's a tree with the same degree
+                if let Some(existing_node) = degrees[degree].take() {
+                    if existing_node.borrow().key < current.borrow().key {
+                        // Existing node has a smaller key, so it becomes the parent
+                        self.link(current.clone(), existing_node.clone());
+                        current = existing_node;
+                    } else {
+                        // Current node has a smaller key, existing node becomes its child
+                        self.link(existing_node.clone(), current.clone());
+                    }
+                    // The degree of the current node has increased (due to linking)
+                    degree = current.borrow().degree;
+                } else {
+                    // No existing node with this degree, insert current into degrees
+                    degrees[degree] = Some(current.clone());
+                    break;
+                }
+            }
         }
 
-        self.root_list = new_root_list;
-        self.min = self
-            .root_list
-            .iter()
-            .min_by_key(|node| node.borrow().key)
-            .cloned();
+        // Rebuild the root list from the degrees vector
+        self.root_list = degrees.into_iter().flatten().collect();
+
+        // Find the new minimum node
+        self.min = self.root_list.iter().min_by_key(|node| node.borrow().key).cloned();
     }
 
     /// Links one node as a child of another.
