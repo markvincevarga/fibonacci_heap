@@ -9,14 +9,96 @@
 //! - Support for decrease-key operations
 //!
 //! # Example Usage
+//! # Internal Operation Examples
+//!
+//! ## Linking Nodes (During Consolidation)
 //! ```rust
 //! use fibonacci_heap::FibonacciHeap;
 //!
 //! let mut heap = FibonacciHeap::new();
 //! heap.insert(10);
 //! heap.insert(20);
-//! let min = heap.extract_min();
-//! assert_eq!(min, Some(10));
+//! heap.insert(5);
+//!
+//! // Extract min triggers consolidation
+//! heap.extract_min();
+//!
+//! // Nodes 10 and 20 get linked during consolidation:
+//! // - 10 becomes child of 20 (or vice versa depending on consolidation order)
+//! // - Root list contains consolidated trees
+//! assert_eq!(heap.root_list.len(), 1);
+//! ```
+//!
+//! ## Cutting Nodes (During Decrease-Key)
+//! ```rust
+//! use fibonacci_heap::FibonacciHeap;
+//!
+//! let mut heap = FibonacciHeap::new();
+//! heap.insert(30);
+//! let node = heap.insert(40);
+//!
+//! // Create parent-child relationship
+//! heap.insert(10);
+//! heap.extract_min(); // Forces consolidation
+//!
+//! // Decrease key triggers cut from parent
+//! heap.decrease_key(40, 5);
+//!
+//! // Node 40 (now 5) is promoted to root
+//! assert_eq!(heap.extract_min(), Some(5));
+//! ```
+//!
+//! ## Cascading Cut (Multi-Level Cutting)
+//! ```rust
+//! use fibonacci_heap::FibonacciHeap;
+//!
+//! let mut heap = FibonacciHeap::new();
+//!
+//! // Build deep hierarchy: root -> parent -> child
+//! heap.insert(100);
+//! let parent = heap.insert(200);
+//! heap.insert(50);
+//! heap.extract_min(); // Consolidate to create hierarchy
+//!
+//! // Add grandchild node
+//! heap.decrease_key(200, 150);
+//! let child = heap.insert(300);
+//! heap.extract_min(); // Create parent-child-grandchild
+//!
+//! // Trigger cascading cut:
+//! heap.decrease_key(300, 10); // First cut (child)
+//! heap.decrease_key(150, 20); // Second cut triggers cascade
+//!
+//! // Verify structure after cascading cuts
+//! assert_eq!(heap.extract_min(), Some(10));
+//! assert_eq!(heap.extract_min(), Some(20));
+//! ```
+//!
+//! ## Full Workflow with All Operations
+//! ```rust
+//! use fibonacci_heap::FibonacciHeap;
+//!
+//! let mut heap = FibonacciHeap::new();
+//!
+//! // 1. Insert and link nodes
+//! heap.insert(30);
+//! heap.insert(10);
+//! heap.insert(20);
+//! heap.extract_min(); // Consolidates and links nodes
+//!
+//! // 2. Create deep hierarchy
+//! let a = heap.insert(40);
+//! heap.insert(5);
+//! heap.extract_min(); // New consolidation
+//!
+//! // 3. Trigger cut and cascading cut
+//! heap.decrease_key(40, 2); // Cut from parent
+//! heap.decrease_key(30, 1); // Cascading cut
+//!
+//! // Final extraction order verifies structure
+//! assert_eq!(heap.extract_min(), Some(1));
+//! assert_eq!(heap.extract_min(), Some(2));
+//! assert_eq!(heap.extract_min(), Some(20));
 //! ```
 //!
 //! # Complexity
@@ -58,7 +140,7 @@ impl Node {
 /// Represents a Fibonacci Heap data structure.
 pub struct FibonacciHeap {
     min: Option<Rc<RefCell<Node>>>,            // The minimum node
-    root_list: Vec<Rc<RefCell<Node>>>,         // List of roots
+    pub root_list: Vec<Rc<RefCell<Node>>>,         // List of roots
     node_map: HashMap<i32, Rc<RefCell<Node>>>, // Map of keys to nodes
 }
 
