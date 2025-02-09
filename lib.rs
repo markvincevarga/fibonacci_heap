@@ -35,9 +35,9 @@ use std::rc::Rc;
 /// Represents a node in the Fibonacci Heap.
 #[derive(PartialEq, Clone)]
 pub struct Node {
-    pub key: i32,          // The key value of the node
-    degree: usize,     // Number of children
-    marked: bool,      // Whether the node has lost a child
+    pub key: i32,                      // The key value of the node
+    degree: usize,                     // Number of children
+    marked: bool,                      // Whether the node has lost a child
     parent: Option<Rc<RefCell<Node>>>, // Reference to the parent node
     children: Vec<Rc<RefCell<Node>>>,  // List of child nodes
 }
@@ -57,9 +57,15 @@ impl Node {
 
 /// Represents a Fibonacci Heap data structure.
 pub struct FibonacciHeap {
-    min: Option<Rc<RefCell<Node>>>, // The minimum node
-    root_list: Vec<Rc<RefCell<Node>>>, // List of roots
+    min: Option<Rc<RefCell<Node>>>,            // The minimum node
+    root_list: Vec<Rc<RefCell<Node>>>,         // List of roots
     node_map: HashMap<i32, Rc<RefCell<Node>>>, // Map of keys to nodes
+}
+
+impl Default for FibonacciHeap {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FibonacciHeap {
@@ -123,7 +129,8 @@ impl FibonacciHeap {
             }
 
             // Remove min_node from root list
-            self.root_list.retain(|node| !Rc::ptr_eq(node, &min_node_ref));
+            self.root_list
+                .retain(|node| !Rc::ptr_eq(node, &min_node_ref));
 
             if self.root_list.is_empty() {
                 self.min = None;
@@ -161,7 +168,11 @@ impl FibonacciHeap {
         }
 
         self.root_list = new_root_list;
-        self.min = self.root_list.iter().min_by_key(|node| node.borrow().key).cloned();
+        self.min = self
+            .root_list
+            .iter()
+            .min_by_key(|node| node.borrow().key)
+            .cloned();
     }
 
     /// Links one node as a child of another.
@@ -214,7 +225,9 @@ impl FibonacciHeap {
     /// Cuts a node from its parent and moves it to the root list.
     fn cut(&mut self, node: Rc<RefCell<Node>>, parent: Rc<RefCell<Node>>) {
         let mut parent_borrowed = parent.borrow_mut();
-        parent_borrowed.children.retain(|child| !Rc::ptr_eq(child, &node));
+        parent_borrowed
+            .children
+            .retain(|child| !Rc::ptr_eq(child, &node));
         parent_borrowed.degree -= 1;
         self.root_list.push(node.clone());
         node.borrow_mut().parent = None;
@@ -238,7 +251,6 @@ impl FibonacciHeap {
         self.root_list.is_empty()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -302,8 +314,12 @@ mod tests {
         heap.insert(10);
         heap.insert(5);
         heap.insert(20);
-        println!("Inserted 20, root list: {:?}",
-                 heap.root_list.iter().map(|n| n.borrow().key).collect::<Vec<_>>()
+        println!(
+            "Inserted 20, root list: {:?}",
+            heap.root_list
+                .iter()
+                .map(|n| n.borrow().key)
+                .collect::<Vec<_>>()
         );
         assert_eq!(heap.extract_min(), Some(5));
         assert_eq!(heap.extract_min(), Some(10));
