@@ -1,6 +1,6 @@
 [package]
 name = "fibonacci_heap"
-version = "0.7.4"
+version = "0.7.5"
 edition = "2021"
 authors = ["<xvi-xv-xii-ix-xxii-ix-xiv <xvi.xv.xii.ix.xxii.ix.xiv@gmail.com>"]
 description = "A Fibonacci Heap implementation in Rust"

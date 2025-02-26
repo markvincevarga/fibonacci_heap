@@ -31,9 +31,9 @@ fn bench_decrease_key(c: &mut Criterion) {
         b.iter(|| {
             let mut heap = FibonacciHeap::new();
             let nodes: Vec<_> = (0..1000).map(|i| heap.insert(i)).collect();
-            for node in nodes {
-                let key = node.borrow().key;
-                heap.decrease_key(key, black_box(key / 2));
+            for node in &nodes {
+                let key = node.lock().unwrap().key;
+                heap.decrease_key(node, black_box(key / 2));
             }
         })
     });
