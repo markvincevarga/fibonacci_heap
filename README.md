@@ -1,3 +1,7 @@
+[![Crates.io](https://img.shields.io/crates/v/fibonacci_heap.svg)](https://crates.io/crates/fibonacci_heap)
+![Rust](https://img.shields.io/badge/Rust-1.70+-orange)
+![License](https://img.shields.io/badge/License-MIT-blue)
+
 # Fibonacci Heap in Rust
 
 
