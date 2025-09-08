@@ -9,6 +9,7 @@
 //! - O(1) amortized time for decrease key operations
 //! - O(log n) amortized time for extract minimum operations
 //! - Comprehensive error handling
+//! - Works with any type implementing `Ord + Clone`
 //!
 //! # Example
 //! ```
@@ -26,7 +27,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
 /// Error types for Fibonacci Heap operations
 #[derive(Debug, PartialEq)]
@@ -38,18 +39,18 @@ pub enum HeapError {
 
 /// A node in the Fibonacci Heap
 #[derive(Debug)]
-pub struct Node {
-    pub key: i32,
+pub struct Node<T> {
+    pub key: T,
     degree: usize,
     marked: bool,
-    parent: Option<Weak<RefCell<Node>>>,
-    children: Vec<Rc<RefCell<Node>>>,
+    parent: Option<Weak<RefCell<Node<T>>>>,
+    children: Vec<Rc<RefCell<Node<T>>>>,
     id: usize, // Unique identifier for node validation
 }
 
-impl Node {
+impl<T> Node<T> {
     /// Creates a new node with the given key and unique ID
-    fn new(key: i32, id: usize) -> Rc<RefCell<Self>> {
+    fn new(key: T, id: usize) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Node {
             key,
             degree: 0,
@@ -63,27 +64,27 @@ impl Node {
 
 /// A Fibonacci Heap data structure
 #[derive(Debug)]
-pub struct FibonacciHeap {
-    min: Option<Rc<RefCell<Node>>>,
-    root_list: Vec<Rc<RefCell<Node>>>,
+pub struct FibonacciHeap<T> {
+    min: Option<Rc<RefCell<Node<T>>>>,
+    root_list: Vec<Rc<RefCell<Node<T>>>>,
     node_count: usize,
     next_id: AtomicUsize,
-    active_nodes: HashMap<usize, Weak<RefCell<Node>>>,
+    active_nodes: HashMap<usize, Weak<RefCell<Node<T>>>>,
 }
 
-impl Default for FibonacciHeap {
+impl<T: Ord + Clone> Default for FibonacciHeap<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FibonacciHeap {
+impl<T: Ord + Clone> FibonacciHeap<T> {
     /// Creates a new empty Fibonacci Heap
     ///
     /// # Examples
     /// ```
     /// use fibonacci_heap::FibonacciHeap;
-    /// let heap = FibonacciHeap::new();
+    /// let heap = FibonacciHeap::<i32>::new();
     /// assert!(heap.is_empty());
     /// ```
     pub fn new() -> Self {
@@ -110,8 +111,8 @@ impl FibonacciHeap {
     /// let mut heap = FibonacciHeap::new();
     /// let node = heap.insert(42).unwrap();
     /// ```
-    pub fn insert(&mut self, key: i32) -> Result<Rc<RefCell<Node>>, HeapError> {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+    pub fn insert(&mut self, key: T) -> Result<Rc<RefCell<Node<T>>>, HeapError> {
+        let id = self.next_id.fetch_add(1, AtomicOrdering::SeqCst);
         let node = Node::new(key, id);
 
         // Store weak reference for validation
@@ -122,7 +123,9 @@ impl FibonacciHeap {
 
         // Update minimum if needed
         match &self.min {
-            Some(min) if key < min.borrow().key => self.min = Some(Rc::clone(&node)),
+            Some(min) if node.borrow().key < min.borrow().key => {
+                self.min = Some(Rc::clone(&node));
+            }
             None => self.min = Some(Rc::clone(&node)),
             _ => (),
         }
@@ -148,7 +151,7 @@ impl FibonacciHeap {
     /// heap1.merge(heap2);
     /// assert_eq!(heap1.extract_min(), Some(5));
     /// ```
-    pub fn merge(&mut self, other: FibonacciHeap) {
+    pub fn merge(&mut self, other: FibonacciHeap<T>) {
         // Merge root lists
         self.root_list.extend(other.root_list);
         self.node_count += other.node_count;
@@ -183,9 +186,9 @@ impl FibonacciHeap {
     ///
     /// assert_eq!(heap.extract_min(), Some(5));
     /// ```
-    pub fn extract_min(&mut self) -> Option<i32> {
+    pub fn extract_min(&mut self) -> Option<T> {
         let min_node = self.min.take()?;
-        let min_key = min_node.borrow().key;
+        let min_key = min_node.borrow().key.clone();
         let min_id = min_node.borrow().id;
 
         // Remove from active nodes
@@ -215,7 +218,7 @@ impl FibonacciHeap {
     fn consolidate(&mut self) {
         // Calculate maximum possible degree based on node count
         let max_degree = (self.node_count as f64).log2() as usize + 2;
-        let mut degree_table: Vec<Option<Rc<RefCell<Node>>>> = vec![None; max_degree];
+        let mut degree_table: Vec<Option<Rc<RefCell<Node<T>>>>> = vec![None; max_degree];
         let mut new_min = None;
 
         // Process all root nodes
@@ -245,7 +248,7 @@ impl FibonacciHeap {
             // Track new minimum
             if new_min
                 .as_ref()
-                .is_none_or(|min: &Rc<RefCell<Node>>| current.borrow().key < min.borrow().key)
+                .is_none_or(|min: &Rc<RefCell<Node<T>>>| current.borrow().key < min.borrow().key)
             {
                 new_min = Some(current);
             }
@@ -257,7 +260,7 @@ impl FibonacciHeap {
     }
 
     /// Links two trees by making one a child of the other
-    fn link(&mut self, child: Rc<RefCell<Node>>, parent: &Rc<RefCell<Node>>) {
+    fn link(&mut self, child: Rc<RefCell<Node<T>>>, parent: &Rc<RefCell<Node<T>>>) {
         // Remove child from root list
         self.root_list.retain(|node| !Rc::ptr_eq(node, &child));
 
@@ -293,8 +296,8 @@ impl FibonacciHeap {
     /// ```
     pub fn decrease_key(
         &mut self,
-        node: &Rc<RefCell<Node>>,
-        new_key: i32,
+        node: &Rc<RefCell<Node<T>>>,
+        new_key: T,
     ) -> Result<(), HeapError> {
         // Validate node reference
         let node_id = node.borrow().id;
@@ -308,7 +311,7 @@ impl FibonacciHeap {
         }
 
         // Update key
-        node.borrow_mut().key = new_key;
+        node.borrow_mut().key = new_key.clone();
 
         // Check if heap property is violated
         if let Some(parent_weak) = &node.borrow().parent {
@@ -321,7 +324,7 @@ impl FibonacciHeap {
         }
 
         // Update minimum if needed
-        if new_key < self.min.as_ref().map_or(i32::MIN, |min| min.borrow().key) {
+        if self.min.is_none() || new_key < self.min.as_ref().unwrap().borrow().key {
             self.min = Some(Rc::clone(node));
         }
 
@@ -329,7 +332,7 @@ impl FibonacciHeap {
     }
 
     /// Cuts a node from its parent and moves it to the root list
-    fn cut(&mut self, node: &Rc<RefCell<Node>>, parent: &Rc<RefCell<Node>>) {
+    fn cut(&mut self, node: &Rc<RefCell<Node<T>>>, parent: &Rc<RefCell<Node<T>>>) {
         // Remove node from parent's children
         parent
             .borrow_mut()
@@ -344,7 +347,7 @@ impl FibonacciHeap {
     }
 
     /// Performs cascading cuts on a node's ancestors if needed
-    fn cascading_cut(&mut self, node: &Rc<RefCell<Node>>) {
+    fn cascading_cut(&mut self, node: &Rc<RefCell<Node<T>>>) {
         if let Some(parent_weak) = &node.borrow().parent {
             if let Some(parent) = parent_weak.upgrade() {
                 if !node.borrow().marked {
@@ -372,8 +375,13 @@ impl FibonacciHeap {
     ///
     /// assert_eq!(heap.peek_min(), Some(5));
     /// ```
-    pub fn peek_min(&self) -> Option<i32> {
-        self.min.as_ref().map(|min| min.borrow().key)
+    pub fn peek_min(&self) -> Option<T> {
+        self.min.as_ref().map(|min| min.borrow().key.clone())
+    }
+
+    /// Returns a cloned copy of the minimum value without removing it
+    pub fn peek_min_cloned(&self) -> Option<T> {
+        self.min.as_ref().map(|min| min.borrow().key.clone())
     }
 
     /// Checks if the heap is empty
@@ -428,16 +436,35 @@ impl FibonacciHeap {
         self.root_list.clear();
         self.node_count = 0;
         self.active_nodes.clear();
-        self.next_id.store(0, Ordering::SeqCst);
+        self.next_id.store(0, AtomicOrdering::SeqCst);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cmp::Ordering;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct Task {
+        priority: i32,
+        name: String,
+    }
+
+    impl Ord for Task {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.priority.cmp(&other.priority)
+        }
+    }
+
+    impl PartialOrd for Task {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
 
     #[test]
-    fn test_basic_operations() {
+    fn test_basic_operations_i32() {
         let mut heap = FibonacciHeap::new();
         assert!(heap.is_empty());
 
@@ -451,7 +478,46 @@ mod tests {
     }
 
     #[test]
-    fn test_merge() {
+    fn test_basic_operations_string() {
+        let mut heap = FibonacciHeap::new();
+
+        heap.insert("zebra".to_string()).unwrap();
+        heap.insert("apple".to_string()).unwrap();
+        heap.insert("banana".to_string()).unwrap();
+
+        assert_eq!(heap.extract_min(), Some("apple".to_string()));
+        assert_eq!(heap.extract_min(), Some("banana".to_string()));
+        assert_eq!(heap.extract_min(), Some("zebra".to_string()));
+    }
+
+    #[test]
+    fn test_custom_type() {
+        let mut heap = FibonacciHeap::new();
+
+        let task1 = Task {
+            priority: 10,
+            name: "Low priority".to_string(),
+        };
+        let task2 = Task {
+            priority: 1,
+            name: "High priority".to_string(),
+        };
+        let task3 = Task {
+            priority: 5,
+            name: "Medium priority".to_string(),
+        };
+
+        heap.insert(task1).unwrap();
+        heap.insert(task2.clone()).unwrap();
+        heap.insert(task3).unwrap();
+
+        assert_eq!(heap.extract_min().unwrap().name, "High priority");
+        assert_eq!(heap.extract_min().unwrap().name, "Medium priority");
+        assert_eq!(heap.extract_min().unwrap().name, "Low priority");
+    }
+
+    #[test]
+    fn test_merge_generic() {
         let mut heap1 = FibonacciHeap::new();
         heap1.insert(10).unwrap();
         heap1.insert(20).unwrap();
@@ -466,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decrease_key() {
+    fn test_decrease_key_generic() {
         let mut heap = FibonacciHeap::new();
         let node = heap.insert(20).unwrap();
         heap.insert(10).unwrap();
@@ -477,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decrease_key_validation() {
+    fn test_decrease_key_validation_generic() {
         let mut heap = FibonacciHeap::new();
         let node = heap.insert(10).unwrap();
 
@@ -486,5 +552,41 @@ mod tests {
 
         // Valid key
         assert!(heap.decrease_key(&node, 5).is_ok());
+    }
+
+    #[test]
+    fn test_peek_operations() {
+        let mut heap = FibonacciHeap::new();
+        heap.insert(10).unwrap();
+        heap.insert(5).unwrap();
+        heap.insert(15).unwrap();
+
+        assert_eq!(heap.peek_min(), Some(5));
+        assert_eq!(heap.peek_min_cloned(), Some(5));
+        assert_eq!(heap.len(), 3); // Peek shouldn't remove items
+    }
+
+    #[test]
+    fn test_decrease_key_custom_type() {
+        let mut heap = FibonacciHeap::new();
+
+        let high_task = Task {
+            priority: 10,
+            name: "Initial low priority".to_string(),
+        };
+        let node = heap.insert(high_task).unwrap();
+        heap.insert(Task {
+            priority: 5,
+            name: "Medium priority".to_string(),
+        })
+        .unwrap();
+
+        let updated_task = Task {
+            priority: 1,
+            name: "Now high priority".to_string(),
+        };
+        heap.decrease_key(&node, updated_task.clone()).unwrap();
+
+        assert_eq!(heap.extract_min().unwrap().name, "Now high priority");
     }
 }
