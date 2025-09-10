@@ -313,13 +313,20 @@ impl<T: Ord + Clone> FibonacciHeap<T> {
         // Update key
         node.borrow_mut().key = new_key.clone();
 
-        // Check if heap property is violated
-        if let Some(parent_weak) = &node.borrow().parent {
-            if let Some(parent) = parent_weak.upgrade() {
-                if new_key < parent.borrow().key {
-                    self.cut(node, &parent);
-                    self.cascading_cut(&parent);
-                }
+        // Check if heap property is violated - extract parent info first
+        let parent = {
+            let node_ref = node.borrow();
+            if let Some(parent_weak) = &node_ref.parent {
+                parent_weak.upgrade()
+            } else {
+                None
+            }
+        }; // node_ref goes out of scope here, releasing the borrow
+
+        if let Some(parent) = parent {
+            if new_key < parent.borrow().key {
+                self.cut(node, &parent);
+                self.cascading_cut(&parent);
             }
         }
 
@@ -588,5 +595,26 @@ mod tests {
         heap.decrease_key(&node, updated_task.clone()).unwrap();
 
         assert_eq!(heap.extract_min().unwrap().name, "Now high priority");
+    }
+
+    #[test]
+    fn test_decrease_key_after_consolidation() {
+        let mut heap = FibonacciHeap::new();
+
+        // Insert nodes to create a structure that will trigger cascading cuts
+        let _node1 = heap.insert(1).unwrap();
+        let node2 = heap.insert(2).unwrap();
+        let node3 = heap.insert(3).unwrap();
+        let node4 = heap.insert(4).unwrap();
+
+        // Extract min to force consolidation and create parent-child relationships
+        heap.extract_min();
+
+        // This sequence of decrease_key operations triggers cascading cuts
+        // that cause RefCell to panic due to overlapping borrows in the
+        // cascading_cut function when multiple borrow() calls happen
+        heap.decrease_key(&node4, 0).unwrap();
+        heap.decrease_key(&node3, 0).unwrap();
+        heap.decrease_key(&node2, 0).unwrap();
     }
 }
