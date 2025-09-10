@@ -355,14 +355,24 @@ impl<T: Ord + Clone> FibonacciHeap<T> {
 
     /// Performs cascading cuts on a node's ancestors if needed
     fn cascading_cut(&mut self, node: &Rc<RefCell<Node<T>>>) {
-        if let Some(parent_weak) = &node.borrow().parent {
-            if let Some(parent) = parent_weak.upgrade() {
-                if !node.borrow().marked {
-                    node.borrow_mut().marked = true;
-                } else {
-                    self.cut(node, &parent);
-                    self.cascading_cut(&parent);
-                }
+        // Extract parent info first
+        let (parent, is_marked) = {
+            let node_ref = node.borrow();
+            let parent = if let Some(parent_weak) = &node_ref.parent {
+                parent_weak.upgrade()
+            } else {
+                None
+            };
+            let is_marked = node_ref.marked;
+            (parent, is_marked)
+        }; // node_ref goes out of scope here, releasing the borrow
+
+        if let Some(parent) = parent {
+            if !is_marked {
+                node.borrow_mut().marked = true;
+            } else {
+                self.cut(node, &parent);
+                self.cascading_cut(&parent);
             }
         }
     }
@@ -616,5 +626,25 @@ mod tests {
         heap.decrease_key(&node4, 0).unwrap();
         heap.decrease_key(&node3, 0).unwrap();
         heap.decrease_key(&node2, 0).unwrap();
+    }
+
+    #[test]
+    fn test_cascading_cut_refcell_panic() {
+        let mut heap: FibonacciHeap<i32> = FibonacciHeap::new();
+
+        // Create nodes that will trigger cascading_cut with RefCell borrowing issue
+        let node1 = heap.insert(50).unwrap();
+        let node2 = heap.insert(30).unwrap();
+        let _node3 = heap.insert(10).unwrap();
+
+        // Extract min to force consolidation and create parent-child relationships
+        heap.extract_min();
+
+        // This triggers cascading_cut which has the RefCell bug:
+        // if let Some(parent_weak) = &node.borrow().parent { creates a borrow
+        // that lives for the entire scope, then node.borrow_mut().marked = true
+        // tries to mutably borrow the same node, causing RefCell panic
+        heap.decrease_key(&node2, 5).unwrap();
+        heap.decrease_key(&node1, 1).unwrap();
     }
 }
