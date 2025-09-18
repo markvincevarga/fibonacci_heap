@@ -203,13 +203,12 @@ impl<T: Ord + Clone> FibonacciHeap<T> {
 
         // Remove min node from root list
         self.root_list.retain(|node| !Rc::ptr_eq(node, &min_node));
-        self.node_count -= 1;
-
         if self.root_list.is_empty() {
             self.min = None;
         } else {
             self.consolidate();
         }
+        self.node_count -= 1;
 
         Some(min_key)
     }
