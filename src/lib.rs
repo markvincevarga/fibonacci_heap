@@ -25,6 +25,7 @@
 //! ```
 
 use std::cell::RefCell;
+use std::cmp;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
@@ -216,7 +217,9 @@ impl<T: Ord + Clone> FibonacciHeap<T> {
     /// Consolidates the trees in the heap to maintain the Fibonacci Heap properties
     fn consolidate(&mut self) {
         // Calculate maximum possible degree based on node count
-        let max_degree = (self.node_count as f64).log2() as usize + 2;
+        let phi = 1.61803398874989_f64;
+        let theoretical_max_degree = ((self.node_count as f64).log2() * 2.0 * phi) as usize + 2;
+        let max_degree = cmp::max(theoretical_max_degree, 32);
         let mut degree_table: Vec<Option<Rc<RefCell<Node<T>>>>> = vec![None; max_degree];
         let mut new_min = None;
 
